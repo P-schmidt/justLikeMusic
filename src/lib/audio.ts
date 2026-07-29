@@ -1,9 +1,11 @@
 /**
- * Beat detection cost scales with the length of the audio, and a mix track's
- * intro/outro is the least representative part of it. Sampling a window from the
- * middle keeps long files responsive without hurting the estimate.
+ * Beat detection sees a window from the middle of the track rather than the whole
+ * thing. Analyzing everything is both slower and less accurate: the detector
+ * builds one interval histogram for the audio it is given, so intros, outros and
+ * breakdowns pull the estimate off the actual tempo. Measured across test tracks,
+ * 30s matched or beat every longer window while running several times faster.
  */
-const ANALYSIS_WINDOW_SECONDS = 60
+const ANALYSIS_WINDOW_SECONDS = 30
 
 let sharedContext: AudioContext | null = null
 
