@@ -7,11 +7,16 @@ interface TrackTableProps {
   onMoveUp: (id: string) => void
   onMoveDown: (id: string) => void
   onRemove: (id: string) => void
+  onTransitionChange: (
+    id: string,
+    startSeconds: number,
+    endSeconds: number,
+  ) => { errors: string[]; range: { startSeconds: number; endSeconds: number } }
 }
 
-const COLUMNS = ['#', 'Track title', 'Artist', 'Genre', 'BPM']
+const COLUMNS = ['#', 'Track title', 'Artist', 'Genre', 'Key', 'BPM']
 
-export function TrackTable({ tracks, onMoveUp, onMoveDown, onRemove }: TrackTableProps) {
+export function TrackTable({ tracks, onMoveUp, onMoveDown, onRemove, onTransitionChange }: TrackTableProps) {
   if (tracks.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/40 px-6 py-16 text-center">
@@ -27,9 +32,10 @@ export function TrackTable({ tracks, onMoveUp, onMoveDown, onRemove }: TrackTabl
   return (
     <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/40">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-3xl border-collapse text-left text-sm">
+        <table className="w-full min-w-4xl border-collapse text-left text-sm">
           <caption className="sr-only">
-            Mix sequence, in play order. Use the row buttons to reorder or remove tracks.
+            Mix sequence, in play order. Use the row buttons to reorder or remove tracks, and set each
+            track&apos;s transition window below its row.
           </caption>
           <thead>
             <tr className="bg-slate-900/80 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -54,6 +60,7 @@ export function TrackTable({ tracks, onMoveUp, onMoveDown, onRemove }: TrackTabl
                 onMoveUp={onMoveUp}
                 onMoveDown={onMoveDown}
                 onRemove={onRemove}
+                onTransitionChange={onTransitionChange}
               />
             ))}
           </tbody>

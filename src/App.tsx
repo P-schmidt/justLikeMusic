@@ -27,7 +27,7 @@ function describeImport({ added, rejected, duplicates }: AddFilesResult): string
 }
 
 export default function App() {
-  const { tracks, addFiles, moveTrack, removeTrack, clearTracks } = useTrackQueue()
+  const { tracks, addFiles, moveTrack, removeTrack, clearTracks, updateTransition } = useTrackQueue()
   const [notice, setNotice] = useState<string | null>(null)
 
   const handleFilesSelected = useCallback(
@@ -47,7 +47,7 @@ export default function App() {
 
   return (
     <div className="min-h-dvh bg-slate-950 text-slate-200">
-      <div className="mx-auto max-w-5xl px-6 py-12">
+      <div className="mx-auto max-w-6xl px-6 py-12">
         <header className="flex items-center gap-4">
           <span className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-fuchsia-500 to-indigo-500 text-white">
             <WaveformIcon className="size-6" />
@@ -96,7 +96,13 @@ export default function App() {
 
             {tracks.length > 0 && <SetSummary tracks={tracks} />}
 
-            <TrackTable tracks={tracks} onMoveUp={moveUp} onMoveDown={moveDown} onRemove={removeTrack} />
+            <TrackTable
+              tracks={tracks}
+              onMoveUp={moveUp}
+              onMoveDown={moveDown}
+              onRemove={removeTrack}
+              onTransitionChange={updateTransition}
+            />
           </section>
         </main>
       </div>

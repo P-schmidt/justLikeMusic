@@ -9,8 +9,13 @@ the running order of the set.
 - **Drag-and-drop zone** — drop any number of audio files at once, or click to
   pick them from the file dialog. Non-audio files are filtered out and files
   already in the set are skipped, both reported in a notice under the zone.
-- **Ordered track table** — sequence number, track title, artist, genre and
-  estimated BPM, plus the decoded length and file size under each title.
+- **Ordered track table** — sequence number, track title, artist, genre, Camelot key,
+  estimated BPM, plus the decoded length and file size under each title. Keys are read
+  from embedded `TKEY` / initial-key tags (Mixed In Key, Rekordbox, etc.) and converted
+  to Camelot notation when needed.
+- **Transition windows** — per-track `Transition start` and `Transition end` inputs in
+  `M:SS` format, validated against the track length, with a mini-waveform strip below
+  each row highlighting the chosen mix-out region.
 - **Reordering** — per-row up/down buttons (disabled at the ends of the list) and
   a remove button. Sequence numbers follow the running order.
 
