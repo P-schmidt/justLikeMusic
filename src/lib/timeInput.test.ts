@@ -1,0 +1,61 @@
+import { describe, expect, it } from 'vitest'
+import {
+  defaultTransitionRange,
+  formatTimeInput,
+  parseTimeInput,
+  validateTransitionRange,
+} from './timeInput'
+
+describe('parseTimeInput', () => {
+  it('parses minutes and seconds', () => {
+    expect(parseTimeInput('0:00')).toBe(0)
+    expect(parseTimeInput('1:30')).toBe(90)
+    expect(parseTimeInput('12:05')).toBe(725)
+  })
+
+  it('rejects invalid formats', () => {
+    expect(parseTimeInput('')).toBeNull()
+    expect(parseTimeInput('90')).toBeNull()
+    expect(parseTimeInput('1:60')).toBeNull()
+    expect(parseTimeInput('abc')).toBeNull()
+  })
+})
+
+describe('formatTimeInput', () => {
+  it('formats whole seconds as M:SS', () => {
+    expect(formatTimeInput(0)).toBe('0:00')
+    expect(formatTimeInput(90)).toBe('1:30')
+    expect(formatTimeInput(725)).toBe('12:05')
+  })
+})
+
+describe('validateTransitionRange', () => {
+  it('accepts a valid window inside the track', () => {
+    const result = validateTransitionRange(30, 120, 180)
+    expect(result.errors).toEqual([])
+    expect(result.range).toEqual({ startSeconds: 30, endSeconds: 120 })
+  })
+
+  it('clamps values that exceed the track length', () => {
+    const result = validateTransitionRange(200, 250, 180)
+    expect(result.errors).toContain('Transition start cannot exceed track length')
+    expect(result.errors).toContain('Transition end cannot exceed track length')
+    expect(result.range).toEqual({ startSeconds: 180, endSeconds: 180 })
+  })
+
+  it('fixes start after end', () => {
+    const result = validateTransitionRange(120, 60, 180)
+    expect(result.errors).toContain('Transition start cannot be after transition end')
+    expect(result.range).toEqual({ startSeconds: 60, endSeconds: 60 })
+  })
+})
+
+describe('defaultTransitionRange', () => {
+  it('uses the last 30 seconds when the track is longer', () => {
+    expect(defaultTransitionRange(240)).toEqual({ startSeconds: 210, endSeconds: 240 })
+  })
+
+  it('uses the full track when shorter than 30 seconds', () => {
+    expect(defaultTransitionRange(20)).toEqual({ startSeconds: 0, endSeconds: 20 })
+  })
+})

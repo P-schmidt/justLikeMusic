@@ -1,3 +1,5 @@
+import { keyToCamelot } from './camelot'
+
 export const UNKNOWN_ARTIST = 'Unknown artist'
 export const UNKNOWN_GENRE = 'Unknown genre'
 
@@ -5,6 +7,8 @@ export interface TrackTags {
   title: string
   artist: string
   genre: string
+  camelotKey: string | null
+  rawKey: string | null
 }
 
 /** Strips the extension so a filename can stand in for a missing title tag. */
@@ -25,6 +29,8 @@ export async function readTrackTags(file: File): Promise<TrackTags> {
     title: titleFromFileName(file.name),
     artist: UNKNOWN_ARTIST,
     genre: UNKNOWN_GENRE,
+    camelotKey: null,
+    rawKey: null,
   }
 
   try {
@@ -32,11 +38,15 @@ export async function readTrackTags(file: File): Promise<TrackTags> {
     // actually queued.
     const { parseBlob } = await import('music-metadata-browser')
     const { common } = await parseBlob(file, { skipCovers: true })
+    const keyTag = firstNonEmpty(common.key)
+    const keyInfo = keyToCamelot(keyTag)
 
     return {
       title: firstNonEmpty(common.title) ?? fallback.title,
       artist: firstNonEmpty(common.artist, common.albumartist) ?? fallback.artist,
       genre: firstNonEmpty(common.genre?.filter(Boolean).join(', ')) ?? fallback.genre,
+      camelotKey: keyInfo?.camelot ?? null,
+      rawKey: keyInfo?.raw ?? keyTag ?? null,
     }
   } catch {
     return fallback

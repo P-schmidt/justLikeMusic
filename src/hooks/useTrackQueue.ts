@@ -4,6 +4,8 @@ import { fileKey, isAudioFile } from '../lib/files'
 import { createLimiter } from '../lib/limiter'
 import { readTrackTags, titleFromFileName, UNKNOWN_ARTIST, UNKNOWN_GENRE } from '../lib/metadata'
 import { moveItem } from '../lib/reorder'
+import { defaultTransitionRange, validateTransitionRange } from '../lib/timeInput'
+import { computeWaveformPeaks } from '../lib/waveform'
 import type { Track } from '../types'
 
 const ANALYSIS_CONCURRENCY = 2
@@ -16,6 +18,11 @@ export interface AddFilesResult {
   rejected: number
   /** Files skipped because the same file is already queued. */
   duplicates: number
+}
+
+export interface TransitionUpdateResult {
+  errors: string[]
+  range: { startSeconds: number; endSeconds: number }
 }
 
 let sequence = 0
@@ -32,8 +39,13 @@ function toQueuedTrack(file: File): Track {
     title: titleFromFileName(file.name),
     artist: UNKNOWN_ARTIST,
     genre: UNKNOWN_GENRE,
+    camelotKey: null,
+    rawKey: null,
     bpm: null,
     durationSeconds: null,
+    transitionStartSeconds: null,
+    transitionEndSeconds: null,
+    waveformPeaks: null,
     status: 'queued',
   }
 }
@@ -87,7 +99,15 @@ export function useTrackQueue() {
 
       try {
         const audioBuffer = await decodeAudioFile(file)
-        patchTrack(id, { durationSeconds: audioBuffer.duration })
+        const durationSeconds = audioBuffer.duration
+        const transition = defaultTransitionRange(durationSeconds)
+
+        patchTrack(id, {
+          durationSeconds,
+          waveformPeaks: computeWaveformPeaks(audioBuffer),
+          transitionStartSeconds: transition.startSeconds,
+          transitionEndSeconds: transition.endSeconds,
+        })
 
         const bpm = await estimateBpm(audioBuffer)
         patchTrack(id, { bpm, status: 'ready', errorMessage: undefined })
@@ -149,5 +169,26 @@ export function useTrackQueue() {
 
   const clearTracks = useCallback(() => commit(() => []), [commit])
 
-  return { tracks, addFiles, moveTrack, removeTrack, clearTracks }
+  const updateTransition = useCallback(
+    (id: string, startSeconds: number, endSeconds: number): TransitionUpdateResult => {
+      const track = tracksRef.current.find((entry) => entry.id === id)
+      if (!track) {
+        return {
+          errors: ['Track not found'],
+          range: { startSeconds, endSeconds },
+        }
+      }
+
+      const { range, errors } = validateTransitionRange(startSeconds, endSeconds, track.durationSeconds)
+      patchTrack(id, {
+        transitionStartSeconds: range.startSeconds,
+        transitionEndSeconds: range.endSeconds,
+      })
+
+      return { errors, range }
+    },
+    [patchTrack],
+  )
+
+  return { tracks, addFiles, moveTrack, removeTrack, clearTracks, updateTransition }
 }
