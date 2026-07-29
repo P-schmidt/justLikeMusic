@@ -67,6 +67,22 @@ export function SpinnerIcon({ className }: IconProps) {
   )
 }
 
+export function PlayIcon({ className }: IconProps) {
+  return (
+    <svg {...BASE_PROPS} className={className} fill="currentColor">
+      <path d="M8 5l11 7-11 7V5z" />
+    </svg>
+  )
+}
+
+export function PauseIcon({ className }: IconProps) {
+  return (
+    <svg {...BASE_PROPS} className={className} fill="currentColor">
+      <path d="M9 5h3v14H9zM15 5h3v14h-3z" />
+    </svg>
+  )
+}
+
 export function AlertIcon({ className }: IconProps) {
   return (
     <svg {...BASE_PROPS} className={className}>

@@ -9,7 +9,8 @@ const ANALYSIS_WINDOW_SECONDS = 30
 
 let sharedContext: AudioContext | null = null
 
-function getAudioContext(): AudioContext {
+/** One context is shared by decoding and playback so scheduling uses the same clock. */
+export function getAudioContext(): AudioContext {
   sharedContext ??= new AudioContext()
   return sharedContext
 }

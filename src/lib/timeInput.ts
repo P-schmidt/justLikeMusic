@@ -80,9 +80,19 @@ export function validateTransitionRange(
   return { range: { startSeconds: start, endSeconds: end }, errors }
 }
 
-/** Default mix-out window: the last 30 seconds, or the whole track when shorter. */
+const DEFAULT_OVERLAP_SECONDS = 30
+const DEFAULT_OVERLAP_FRACTION = 0.25
+
+/**
+ * Default mix-out window: the last 30 seconds, shortened for tracks under two
+ * minutes. Taking a fixed 30s off a short track would put its transition start at
+ * 00:00, which stacks the whole set on top of itself.
+ */
 export function defaultTransitionRange(durationSeconds: number): TransitionRange {
-  const endSeconds = durationSeconds
-  const startSeconds = Math.max(0, durationSeconds - 30)
-  return { startSeconds, endSeconds }
+  const overlap = Math.min(DEFAULT_OVERLAP_SECONDS, durationSeconds * DEFAULT_OVERLAP_FRACTION)
+
+  return {
+    startSeconds: Math.max(0, durationSeconds - overlap),
+    endSeconds: durationSeconds,
+  }
 }

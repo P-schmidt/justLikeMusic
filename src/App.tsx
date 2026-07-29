@@ -1,8 +1,10 @@
 import { useCallback, useState } from 'react'
 import { DropZone } from './components/DropZone'
+import { MixPlayerBar } from './components/MixPlayerBar'
 import { SetSummary } from './components/SetSummary'
 import { TrackTable } from './components/TrackTable'
 import { WaveformIcon } from './components/icons'
+import { useMixEngine } from './hooks/useMixEngine'
 import type { AddFilesResult } from './hooks/useTrackQueue'
 import { useTrackQueue } from './hooks/useTrackQueue'
 
@@ -28,7 +30,14 @@ function describeImport({ added, rejected, duplicates }: AddFilesResult): string
 
 export default function App() {
   const { tracks, addFiles, moveTrack, removeTrack, clearTracks, updateTransition } = useTrackQueue()
+  const mix = useMixEngine(tracks)
   const [notice, setNotice] = useState<string | null>(null)
+
+  // While a crossfade runs two tracks are audible; the outgoing one is the label.
+  const nowPlaying =
+    mix.activeTrackIds.length === 0
+      ? null
+      : (tracks.find((track) => track.id === mix.activeTrackIds[0])?.title ?? null)
 
   const handleFilesSelected = useCallback(
     (files: File[]) => {
@@ -47,7 +56,7 @@ export default function App() {
 
   return (
     <div className="min-h-dvh bg-slate-950 text-slate-200">
-      <div className="mx-auto max-w-6xl px-6 py-12">
+      <div className="mx-auto max-w-6xl px-6 pt-12 pb-32">
         <header className="flex items-center gap-4">
           <span className="flex size-12 items-center justify-center rounded-xl bg-gradient-to-br from-fuchsia-500 to-indigo-500 text-white">
             <WaveformIcon className="size-6" />
@@ -102,10 +111,22 @@ export default function App() {
               onMoveDown={moveDown}
               onRemove={removeTrack}
               onTransitionChange={updateTransition}
+              activeTrackIds={mix.activeTrackIds}
             />
           </section>
         </main>
       </div>
+
+      <MixPlayerBar
+        isPlaying={mix.isPlaying}
+        position={mix.position}
+        duration={mix.duration}
+        canPlay={mix.canPlay}
+        nowPlaying={nowPlaying}
+        onPlay={mix.play}
+        onPause={mix.pause}
+        onSeek={mix.seek}
+      />
     </div>
   )
 }

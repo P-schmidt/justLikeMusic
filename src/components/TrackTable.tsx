@@ -12,11 +12,21 @@ interface TrackTableProps {
     startSeconds: number,
     endSeconds: number,
   ) => { errors: string[]; range: { startSeconds: number; endSeconds: number } }
+  activeTrackIds: string[]
 }
 
 const COLUMNS = ['#', 'Track title', 'Artist', 'Genre', 'Key', 'BPM']
 
-export function TrackTable({ tracks, onMoveUp, onMoveDown, onRemove, onTransitionChange }: TrackTableProps) {
+export function TrackTable({
+  tracks,
+  onMoveUp,
+  onMoveDown,
+  onRemove,
+  onTransitionChange,
+  activeTrackIds,
+}: TrackTableProps) {
+  const active = new Set(activeTrackIds)
+
   if (tracks.length === 0) {
     return (
       <div className="flex flex-col items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/40 px-6 py-16 text-center">
@@ -61,6 +71,7 @@ export function TrackTable({ tracks, onMoveUp, onMoveDown, onRemove, onTransitio
                 onMoveDown={onMoveDown}
                 onRemove={onRemove}
                 onTransitionChange={onTransitionChange}
+                isActive={active.has(track.id)}
               />
             ))}
           </tbody>
