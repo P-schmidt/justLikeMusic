@@ -18,6 +18,7 @@ interface TrackRowProps {
     startSeconds: number,
     endSeconds: number,
   ) => { errors: string[]; range: { startSeconds: number; endSeconds: number } }
+  isActive: boolean
 }
 
 const ACTION_BUTTON_CLASS =
@@ -32,14 +33,24 @@ export function TrackRow({
   onMoveDown,
   onRemove,
   onTransitionChange,
+  isActive,
 }: TrackRowProps) {
   const columnCount = 7
 
   return (
     <>
-      <tr className="border-t border-slate-800 transition-colors hover:bg-slate-900/60">
+      <tr
+        className={`border-t border-slate-800 transition-colors ${
+          isActive ? 'bg-fuchsia-500/10' : 'hover:bg-slate-900/60'
+        }`}
+      >
         <td className="px-4 py-3 align-middle">
-          <span className="font-mono text-sm tabular-nums text-slate-500">{String(position).padStart(2, '0')}</span>
+          <span
+            className={`font-mono text-sm tabular-nums ${isActive ? 'text-fuchsia-300' : 'text-slate-500'}`}
+            aria-current={isActive ? 'true' : undefined}
+          >
+            {String(position).padStart(2, '0')}
+          </span>
         </td>
 
         <td className="max-w-xs px-4 py-3 align-middle">
@@ -110,7 +121,7 @@ export function TrackRow({
         </td>
       </tr>
 
-      <tr className="border-t border-slate-800/60 bg-slate-950/30">
+      <tr className={`border-t border-slate-800/60 ${isActive ? 'bg-fuchsia-500/5' : 'bg-slate-950/30'}`}>
         <td colSpan={columnCount} className="px-4 py-3">
           <div className="space-y-3">
             <TransitionInputs track={track} onChange={onTransitionChange} />

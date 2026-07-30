@@ -51,11 +51,16 @@ describe('validateTransitionRange', () => {
 })
 
 describe('defaultTransitionRange', () => {
-  it('uses the last 30 seconds when the track is longer', () => {
+  it('uses the last 30 seconds on a full-length track', () => {
     expect(defaultTransitionRange(240)).toEqual({ startSeconds: 210, endSeconds: 240 })
   })
 
-  it('uses the full track when shorter than 30 seconds', () => {
-    expect(defaultTransitionRange(20)).toEqual({ startSeconds: 0, endSeconds: 20 })
+  it('shortens the overlap on brief tracks so the start is never 0:00', () => {
+    expect(defaultTransitionRange(20)).toEqual({ startSeconds: 15, endSeconds: 20 })
+    expect(defaultTransitionRange(60)).toEqual({ startSeconds: 45, endSeconds: 60 })
+  })
+
+  it('always ends at the track length', () => {
+    expect(defaultTransitionRange(97).endSeconds).toBe(97)
   })
 })

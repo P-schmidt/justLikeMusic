@@ -16,6 +16,31 @@ the running order of the set.
 - **Transition windows** — per-track `Transition start` and `Transition end` inputs in
   `M:SS` format, validated against the track length, with a mini-waveform strip below
   each row highlighting the chosen mix-out region.
+- **Master player bar** — `Play Mix` / `Pause Mix` and a timeline slider covering the
+  whole set. Rows light up while they are audible, so both sides of a crossfade are
+  visible as it happens.
+
+## How the mix engine works
+
+The queue is laid out on one continuous timeline: track N + 1 starts from its own
+00:00 the moment track N reaches its transition start, and the two overlap until
+track N's transition end.
+
+Each track gets its own `AudioBufferSourceNode` and `GainNode`, started at an
+absolute time on the shared `AudioContext` clock. A polling loop only decides which
+sources to *create* (20 seconds ahead of the playhead); once started, the whole
+crossfade is described by automation events on the gain, so transitions land where
+the plan says instead of depending on timer accuracy.
+
+Crossfades are equal-power: the outgoing track follows a cosine curve and the
+incoming one a sine, so their gains squared sum to 1 throughout. Both sit at 0.707
+(−3 dB) at the midpoint. A linear pair would sum to less than 1 in the middle, which
+is the audible dip in a naive crossfade.
+
+Editing a transition or reordering mid-playback only restarts the sources from the
+first affected track onwards, so an edit later in the set does not interrupt what is
+currently playing. Decoded audio is large, so only a short window of buffers around
+the playhead is kept in memory.
 - **Reordering** — per-row up/down buttons (disabled at the ends of the list) and
   a remove button. Sequence numbers follow the running order.
 
