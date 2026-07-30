@@ -1,8 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  clampTimeRange,
+  defaultDropInRange,
   defaultTransitionRange,
   formatTimeInput,
   parseTimeInput,
+  validateDropInRange,
   validateTransitionRange,
 } from './timeInput'
 
@@ -13,19 +16,26 @@ describe('parseTimeInput', () => {
     expect(parseTimeInput('12:05')).toBe(725)
   })
 
+  it('parses one decimal place', () => {
+    expect(parseTimeInput('1:30.5')).toBe(90.5)
+    expect(parseTimeInput('0:04.2')).toBe(4.2)
+  })
+
   it('rejects invalid formats', () => {
     expect(parseTimeInput('')).toBeNull()
     expect(parseTimeInput('90')).toBeNull()
     expect(parseTimeInput('1:60')).toBeNull()
+    expect(parseTimeInput('1:30.12')).toBeNull()
     expect(parseTimeInput('abc')).toBeNull()
   })
 })
 
 describe('formatTimeInput', () => {
-  it('formats whole seconds as M:SS', () => {
-    expect(formatTimeInput(0)).toBe('0:00')
-    expect(formatTimeInput(90)).toBe('1:30')
-    expect(formatTimeInput(725)).toBe('12:05')
+  it('formats with one decimal so bar snaps stay visible', () => {
+    expect(formatTimeInput(0)).toBe('0:00.0')
+    expect(formatTimeInput(90)).toBe('1:30.0')
+    expect(formatTimeInput(90.5)).toBe('1:30.5')
+    expect(formatTimeInput(4.24)).toBe('0:04.2')
   })
 })
 
@@ -50,6 +60,14 @@ describe('validateTransitionRange', () => {
   })
 })
 
+describe('validateDropInRange', () => {
+  it('labels clamp errors for the drop-in window', () => {
+    const result = validateDropInRange(200, 250, 180)
+    expect(result.errors).toContain('Drop-in start cannot exceed track length')
+    expect(result.errors).toContain('Drop-in end cannot exceed track length')
+  })
+})
+
 describe('defaultTransitionRange', () => {
   it('uses the last 30 seconds on a full-length track', () => {
     expect(defaultTransitionRange(240)).toEqual({ startSeconds: 210, endSeconds: 240 })
@@ -62,5 +80,23 @@ describe('defaultTransitionRange', () => {
 
   it('always ends at the track length', () => {
     expect(defaultTransitionRange(97).endSeconds).toBe(97)
+  })
+})
+
+describe('defaultDropInRange', () => {
+  it('uses the first 30 seconds on a full-length track', () => {
+    expect(defaultDropInRange(240)).toEqual({ startSeconds: 0, endSeconds: 30 })
+  })
+
+  it('shortens the window on brief tracks', () => {
+    expect(defaultDropInRange(20)).toEqual({ startSeconds: 0, endSeconds: 5 })
+    expect(defaultDropInRange(60)).toEqual({ startSeconds: 0, endSeconds: 15 })
+  })
+})
+
+describe('clampTimeRange', () => {
+  it('keeps a moved window inside the track', () => {
+    expect(clampTimeRange(-10, 20, 100)).toEqual({ startSeconds: 0, endSeconds: 30 })
+    expect(clampTimeRange(90, 120, 100)).toEqual({ startSeconds: 70, endSeconds: 100 })
   })
 })

@@ -29,7 +29,8 @@ function describeImport({ added, rejected, duplicates }: AddFilesResult): string
 }
 
 export default function App() {
-  const { tracks, addFiles, moveTrack, removeTrack, clearTracks, updateTransition } = useTrackQueue()
+  const { tracks, addFiles, moveTrack, removeTrack, clearTracks, updateTransition, updateDropIn } =
+    useTrackQueue()
   const mix = useMixEngine(tracks)
   const [notice, setNotice] = useState<string | null>(null)
 
@@ -111,6 +112,7 @@ export default function App() {
               onMoveDown={moveDown}
               onRemove={removeTrack}
               onTransitionChange={updateTransition}
+              onDropInChange={updateDropIn}
               activeTrackIds={mix.activeTrackIds}
             />
           </section>

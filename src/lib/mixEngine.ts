@@ -1,15 +1,23 @@
 import type { Track } from '../types'
 import { decodeAudioFile, getAudioContext } from './audio'
+import {
+  BASS_SHELF_FREQUENCY_HZ,
+  BASS_SHELF_Q,
+  RUMBLE_HIGHPASS_HZ,
+  bassShelfCurve,
+} from './bassEq'
 import { equalPowerCurve } from './equalPower'
 import {
   buildMixPlan,
   EMPTY_MIX_PLAN,
   firstChangedIndex,
+  segmentSpan,
   segmentsAt,
   segmentSignature,
   type MixPlan,
   type MixSegment,
 } from './mixPlan'
+import { normalizationGain } from './normalize'
 
 /** How far ahead of the playhead sources are created and scheduled. */
 const LOOKAHEAD_SECONDS = 20
@@ -23,7 +31,14 @@ const DECODED_CACHE_LIMIT = 4
 interface ScheduledSource {
   segment: MixSegment
   source: AudioBufferSourceNode
-  gain: GainNode
+  /** Fixed RMS matching — set once when the source is created. */
+  normGain: GainNode
+  /** Fixed rumble / DC high-pass. */
+  highPass: BiquadFilterNode
+  /** Automated low-shelf used for the bass swap during transitions. */
+  bassShelf: BiquadFilterNode
+  /** Equal-power crossfade gain. */
+  fadeGain: GainNode
 }
 
 export interface MixSnapshot {
@@ -42,11 +57,13 @@ function clamp(value: number, min: number, max: number): number {
 /**
  * Sequences the queue into one continuous stream.
  *
- * Every track gets its own `AudioBufferSourceNode` and `GainNode`, started at an
- * absolute time on the shared `AudioContext` clock, so transitions land exactly
- * where the plan says rather than depending on timer accuracy. A polling loop only
- * decides what to *create*; once a source is started the crossfade is fully
- * described by automation events on its gain.
+ * Every track gets its own channel graph:
+ *   source → normGain → highPass → bassShelf → fadeGain → master
+ *
+ * Sources are started at an absolute time on the shared `AudioContext` clock, so
+ * transitions land exactly where the plan says rather than depending on timer
+ * accuracy. A polling loop only decides what to *create*; once a source is
+ * started the crossfade and bass swap are fully described by automation events.
  */
 export class MixEngine {
   private context: AudioContext | null = null
@@ -246,7 +263,7 @@ export class MixEngine {
       if (segment.startTime > horizon) {
         break
       }
-      if (segment.startTime + segment.localEnd <= position) {
+      if (segment.startTime + segmentSpan(segment) <= position) {
         continue
       }
       if (this.scheduled.has(segment.trackId) || this.pending.has(segment.trackId)) {
@@ -284,65 +301,99 @@ export class MixEngine {
       return
     }
 
-    const localOffset = Math.max(0, this.position - segment.startTime)
-    const playDuration = segment.localEnd - localOffset
+    const elapsed = Math.max(0, this.position - segment.startTime)
+    const localTime = segment.localStart + elapsed
+    const playDuration = segment.localEnd - localTime
     if (playDuration <= 0) {
       return
     }
 
     const toContextTime = (mixTime: number) => this.anchorContextTime + (mixTime - this.anchorMix)
-    const when = Math.max(context.currentTime, toContextTime(segment.startTime + localOffset))
+    const when = Math.max(context.currentTime, toContextTime(segment.startTime + elapsed))
 
-    const gain = context.createGain()
-    gain.connect(master)
+    const channel = this.createChannel(context, buffer)
+    this.applyCrossfade(channel.fadeGain.gain, segment, localTime, when, toContextTime)
+    this.applyBassSwap(channel.bassShelf.gain, segment, localTime, when, toContextTime)
 
-    const source = context.createBufferSource()
-    source.buffer = buffer
-    source.connect(gain)
-
-    this.applyCrossfade(gain.gain, segment, localOffset, when, toContextTime)
-
-    source.onended = () => {
-      if (this.scheduled.get(segment.trackId)?.source === source) {
+    channel.source.onended = () => {
+      if (this.scheduled.get(segment.trackId)?.source === channel.source) {
         this.scheduled.delete(segment.trackId)
       }
-      gain.disconnect()
+      this.disconnectChannel(channel)
     }
 
-    source.start(when, localOffset, playDuration)
-    this.scheduled.set(segment.trackId, { segment, source, gain })
+    channel.fadeGain.connect(master)
+    channel.source.start(when, localTime, playDuration)
+    this.scheduled.set(segment.trackId, { segment, ...channel })
+  }
+
+  /**
+   * Builds one track's processing chain:
+   * source → RMS norm → rumble high-pass → automated bass shelf → fade gain.
+   */
+  private createChannel(context: AudioContext, buffer: AudioBuffer) {
+    const source = context.createBufferSource()
+    source.buffer = buffer
+
+    const normGain = context.createGain()
+    normGain.gain.value = normalizationGain(buffer)
+
+    const highPass = context.createBiquadFilter()
+    highPass.type = 'highpass'
+    highPass.frequency.value = RUMBLE_HIGHPASS_HZ
+    highPass.Q.value = 0.707
+
+    const bassShelf = context.createBiquadFilter()
+    bassShelf.type = 'lowshelf'
+    bassShelf.frequency.value = BASS_SHELF_FREQUENCY_HZ
+    bassShelf.Q.value = BASS_SHELF_Q
+    bassShelf.gain.value = 0
+
+    const fadeGain = context.createGain()
+
+    source.connect(normGain)
+    normGain.connect(highPass)
+    highPass.connect(bassShelf)
+    bassShelf.connect(fadeGain)
+
+    return { source, normGain, highPass, bassShelf, fadeGain }
   }
 
   /**
    * Writes the whole fade-in/fade-out shape for one track as automation events.
    *
-   * `localOffset` is where playback joins the track, which is 0 for a normal
-   * transition but can land inside either fade after a seek. Each branch emits at
-   * most one curve starting at `when`, because a `setValueCurveAtTime` throws if
-   * another event sits inside its window.
+   * `localTime` is the absolute position inside the audio buffer where playback
+   * joins — normally `localStart`, but mid-fade after a seek. Each branch emits
+   * at most one curve starting at `when`, because a `setValueCurveAtTime` throws
+   * if another event sits inside its window.
    */
   private applyCrossfade(
     param: AudioParam,
     segment: MixSegment,
-    localOffset: number,
+    localTime: number,
     when: number,
     toContextTime: (mixTime: number) => number,
   ): void {
-    const { fadeInDuration, fadeOutStart, fadeOutEnd } = segment
+    const { localStart, fadeInDuration, fadeOutStart, fadeOutEnd } = segment
     const overlap = fadeOutStart !== null && fadeOutEnd !== null ? fadeOutEnd - fadeOutStart : 0
 
     // Joining while the track is already fading out: only the tail is left.
-    if (fadeOutStart !== null && fadeOutEnd !== null && overlap > 0 && localOffset >= fadeOutStart) {
-      const progress = (localOffset - fadeOutStart) / overlap
-      param.setValueCurveAtTime(equalPowerCurve('out', progress, 1), when, fadeOutEnd - localOffset)
+    if (fadeOutStart !== null && fadeOutEnd !== null && overlap > 0 && localTime >= fadeOutStart) {
+      const progress = (localTime - fadeOutStart) / overlap
+      param.setValueCurveAtTime(equalPowerCurve('out', progress, 1), when, fadeOutEnd - localTime)
       return
     }
 
     let fadeInEnd = when
+    const fadeInEndLocal = localStart + fadeInDuration
 
-    if (fadeInDuration > 0 && localOffset < fadeInDuration) {
-      const remaining = fadeInDuration - localOffset
-      param.setValueCurveAtTime(equalPowerCurve('in', localOffset / fadeInDuration, 1), when, remaining)
+    if (fadeInDuration > 0 && localTime < fadeInEndLocal) {
+      const remaining = fadeInEndLocal - localTime
+      param.setValueCurveAtTime(
+        equalPowerCurve('in', (localTime - localStart) / fadeInDuration, 1),
+        when,
+        remaining,
+      )
       fadeInEnd = when + remaining
     } else {
       param.setValueAtTime(1, when)
@@ -353,8 +404,62 @@ export class MixEngine {
       return
     }
 
-    const fadeOutAt = Math.max(fadeInEnd + AUTOMATION_GUARD_SECONDS, toContextTime(segment.startTime + fadeOutStart))
+    const fadeOutAt = Math.max(
+      fadeInEnd + AUTOMATION_GUARD_SECONDS,
+      toContextTime(segment.startTime + (fadeOutStart - localStart)),
+    )
     param.setValueCurveAtTime(equalPowerCurve('out'), fadeOutAt, overlap)
+  }
+
+  /**
+   * Automates the low-shelf gain in lockstep with the volume crossfade.
+   *
+   * Outside a transition the shelf sits at 0 dB (flat). During the outgoing
+   * fade it dives to `BASS_CUT_DB`; during the incoming fade it rises back.
+   * Joining mid-transition after a seek emits only the remaining slice.
+   */
+  private applyBassSwap(
+    param: AudioParam,
+    segment: MixSegment,
+    localTime: number,
+    when: number,
+    toContextTime: (mixTime: number) => number,
+  ): void {
+    const { localStart, fadeInDuration, fadeOutStart, fadeOutEnd } = segment
+    const overlap = fadeOutStart !== null && fadeOutEnd !== null ? fadeOutEnd - fadeOutStart : 0
+
+    if (fadeOutStart !== null && fadeOutEnd !== null && overlap > 0 && localTime >= fadeOutStart) {
+      const progress = (localTime - fadeOutStart) / overlap
+      param.setValueCurveAtTime(bassShelfCurve('out', progress, 1), when, fadeOutEnd - localTime)
+      return
+    }
+
+    let fadeInEnd = when
+    const fadeInEndLocal = localStart + fadeInDuration
+
+    if (fadeInDuration > 0 && localTime < fadeInEndLocal) {
+      const remaining = fadeInEndLocal - localTime
+      param.setValueCurveAtTime(
+        bassShelfCurve('in', (localTime - localStart) / fadeInDuration, 1),
+        when,
+        remaining,
+      )
+      fadeInEnd = when + remaining
+    } else {
+      param.setValueAtTime(0, when)
+    }
+
+    if (fadeOutStart === null || overlap <= 0) {
+      return
+    }
+
+    const fadeOutAt = Math.max(
+      fadeInEnd + AUTOMATION_GUARD_SECONDS,
+      toContextTime(segment.startTime + (fadeOutStart - localStart)),
+    )
+    // Park the shelf flat until the fade-out starts, then dive into the cut.
+    param.setValueAtTime(0, Math.max(when, fadeOutAt - AUTOMATION_GUARD_SECONDS))
+    param.setValueCurveAtTime(bassShelfCurve('out'), fadeOutAt, overlap)
   }
 
   private async loadBuffer(trackId: string): Promise<AudioBuffer> {
@@ -430,7 +535,14 @@ export class MixEngine {
       // Already stopped.
     }
 
-    entry.source.disconnect()
-    entry.gain.disconnect()
+    this.disconnectChannel(entry)
+  }
+
+  private disconnectChannel(channel: Pick<ScheduledSource, 'source' | 'normGain' | 'highPass' | 'bassShelf' | 'fadeGain'>): void {
+    channel.source.disconnect()
+    channel.normGain.disconnect()
+    channel.highPass.disconnect()
+    channel.bassShelf.disconnect()
+    channel.fadeGain.disconnect()
   }
 }

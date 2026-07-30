@@ -14,11 +14,20 @@ export interface Track {
   rawKey: string | null
   /** Estimated tempo, rounded to one decimal. `null` until analysis succeeds. */
   bpm: number | null
+  /**
+   * Beat-grid phase from tempo detection — time of a detected beat, used to place
+   * bar lines and snap transitions. `null` when no steady beat was found.
+   */
+  beatOffsetSeconds: number | null
   durationSeconds: number | null
   /** Mix-out window start, in seconds from the beginning of the track. */
   transitionStartSeconds: number | null
   /** Mix-out window end, in seconds from the beginning of the track. */
   transitionEndSeconds: number | null
+  /** Mix-in (drop-in) window start — where playback begins when this track is mixed in. */
+  dropInStartSeconds: number | null
+  /** Mix-in (drop-in) window end — where the fade-in reaches full volume. */
+  dropInEndSeconds: number | null
   /** Downsampled peak envelope for the mini-waveform strip. */
   waveformPeaks: number[] | null
   status: AnalysisStatus

@@ -36,21 +36,35 @@ function centeredWindow(totalSeconds: number): { offset: number; duration: numbe
   }
 }
 
-/** Estimated tempo in beats per minute, rounded to one decimal. */
-export async function estimateBpm(audioBuffer: AudioBuffer): Promise<number> {
+export interface TempoGuess {
+  /** Estimated tempo in beats per minute, rounded to one decimal. */
+  bpm: number
+  /**
+   * Beat-grid phase from `web-audio-beat-detector`'s `guess()` — the time of a
+   * detected beat, used to place bar lines and snap transitions.
+   */
+  offsetSeconds: number
+}
+
+/** Tempo + beat phase via `guess()`. Throws when no steady beat is found. */
+export async function estimateTempo(audioBuffer: AudioBuffer): Promise<TempoGuess> {
   const { offset, duration } = centeredWindow(audioBuffer.duration)
 
-  let tempo: number
+  let result: { bpm: number; offset: number }
   try {
-    const { analyze } = await import('web-audio-beat-detector')
-    tempo = await analyze(audioBuffer, offset, duration)
+    const { guess } = await import('web-audio-beat-detector')
+    result = await guess(audioBuffer, offset, duration)
   } catch {
     throw new Error('No steady beat found')
   }
 
-  if (!Number.isFinite(tempo) || tempo <= 0) {
+  if (!Number.isFinite(result.bpm) || result.bpm <= 0 || !Number.isFinite(result.offset)) {
     throw new Error('No steady beat found')
   }
 
-  return Math.round(tempo * 10) / 10
+  return {
+    bpm: Math.round(result.bpm * 10) / 10,
+    // `guess` offset is relative to the analysis window start.
+    offsetSeconds: offset + result.offset,
+  }
 }
