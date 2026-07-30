@@ -1,13 +1,19 @@
-export interface TransitionRange {
+export interface TimeRange {
   startSeconds: number
   endSeconds: number
 }
 
-export interface TransitionValidation {
-  range: TransitionRange
+/** @deprecated Prefer `TimeRange` — kept as an alias for existing call sites. */
+export type TransitionRange = TimeRange
+
+export interface TimeRangeValidation {
+  range: TimeRange
   /** Non-empty when the submitted values were clamped or rejected in part. */
   errors: string[]
 }
+
+/** @deprecated Prefer `TimeRangeValidation`. */
+export type TransitionValidation = TimeRangeValidation
 
 /** Whole seconds or one decimal: `1:30`, `1:30.5`, `0:04.2`. */
 const TIME_PATTERN = /^(\d+):([0-5]?\d)(?:\.(\d))?$/
@@ -50,14 +56,15 @@ export function formatTimeInput(seconds: number): string {
 }
 
 /**
- * Keeps a transition window inside `[0, duration]` with start ≤ end. Values above
+ * Keeps a time window inside `[0, duration]` with start ≤ end. Values above
  * the track length are clamped; if start ends up past end they are equalized.
  */
-export function validateTransitionRange(
+export function validateTimeRange(
   startSeconds: number,
   endSeconds: number,
   durationSeconds: number | null,
-): TransitionValidation {
+  label: string,
+): TimeRangeValidation {
   const errors: string[] = []
 
   if (durationSeconds === null || !Number.isFinite(durationSeconds) || durationSeconds <= 0) {
@@ -71,35 +78,83 @@ export function validateTransitionRange(
   let end = Math.max(0, endSeconds)
 
   if (startSeconds > durationSeconds) {
-    errors.push('Transition start cannot exceed track length')
+    errors.push(`${label} start cannot exceed track length`)
     start = durationSeconds
   }
 
   if (endSeconds > durationSeconds) {
-    errors.push('Transition end cannot exceed track length')
+    errors.push(`${label} end cannot exceed track length`)
     end = durationSeconds
   }
 
   if (start > end) {
-    errors.push('Transition start cannot be after transition end')
+    errors.push(`${label} start cannot be after ${label.toLowerCase()} end`)
     start = end
   }
 
   return { range: { startSeconds: start, endSeconds: end }, errors }
 }
 
+export function validateTransitionRange(
+  startSeconds: number,
+  endSeconds: number,
+  durationSeconds: number | null,
+): TimeRangeValidation {
+  return validateTimeRange(startSeconds, endSeconds, durationSeconds, 'Transition')
+}
+
+export function validateDropInRange(
+  startSeconds: number,
+  endSeconds: number,
+  durationSeconds: number | null,
+): TimeRangeValidation {
+  return validateTimeRange(startSeconds, endSeconds, durationSeconds, 'Drop-in')
+}
+
 const DEFAULT_OVERLAP_SECONDS = 30
 const DEFAULT_OVERLAP_FRACTION = 0.25
+
+function defaultOverlapSeconds(durationSeconds: number): number {
+  return Math.min(DEFAULT_OVERLAP_SECONDS, durationSeconds * DEFAULT_OVERLAP_FRACTION)
+}
 
 /**
  * Free-time fallback when no beat grid is available: the last 30 seconds,
  * shortened for tracks under two minutes.
  */
-export function defaultTransitionRange(durationSeconds: number): TransitionRange {
-  const overlap = Math.min(DEFAULT_OVERLAP_SECONDS, durationSeconds * DEFAULT_OVERLAP_FRACTION)
+export function defaultTransitionRange(durationSeconds: number): TimeRange {
+  const overlap = defaultOverlapSeconds(durationSeconds)
 
   return {
     startSeconds: Math.max(0, durationSeconds - overlap),
     endSeconds: durationSeconds,
   }
+}
+
+/**
+ * Default mix-in window: the first 30 seconds (or 25% on short tracks), so the
+ * incoming fade matches the typical outgoing overlap length.
+ */
+export function defaultDropInRange(durationSeconds: number): TimeRange {
+  const overlap = defaultOverlapSeconds(durationSeconds)
+
+  return {
+    startSeconds: 0,
+    endSeconds: Math.min(durationSeconds, overlap),
+  }
+}
+
+/** Clamps a dragged window into the track while preserving its length when possible. */
+export function clampTimeRange(startSeconds: number, endSeconds: number, durationSeconds: number): TimeRange {
+  const duration = Math.max(0, endSeconds - startSeconds)
+  let start = Math.max(0, Math.min(startSeconds, durationSeconds))
+  let end = Math.max(start, Math.min(endSeconds, durationSeconds))
+
+  if (end - start < duration && start === 0) {
+    end = Math.min(durationSeconds, duration)
+  } else if (end - start < duration && end === durationSeconds) {
+    start = Math.max(0, durationSeconds - duration)
+  }
+
+  return { startSeconds: start, endSeconds: end }
 }

@@ -1,8 +1,9 @@
 import { formatDuration, formatFileSize } from '../lib/format'
+import { formatTimeInput } from '../lib/timeInput'
 import type { Track } from '../types'
 import { MiniWaveform } from './MiniWaveform'
 import { StatusCell } from './StatusCell'
-import { TransitionInputs } from './TransitionInputs'
+import { WindowInputs } from './WindowInputs'
 import { ArrowDownIcon, ArrowUpIcon, TrashIcon } from './icons'
 
 interface TrackRowProps {
@@ -14,6 +15,11 @@ interface TrackRowProps {
   onMoveDown: (id: string) => void
   onRemove: (id: string) => void
   onTransitionChange: (
+    id: string,
+    startSeconds: number,
+    endSeconds: number,
+  ) => { errors: string[]; range: { startSeconds: number; endSeconds: number } }
+  onDropInChange: (
     id: string,
     startSeconds: number,
     endSeconds: number,
@@ -33,9 +39,15 @@ export function TrackRow({
   onMoveDown,
   onRemove,
   onTransitionChange,
+  onDropInChange,
   isActive,
 }: TrackRowProps) {
   const columnCount = 7
+
+  const setDropInCue = (cueSeconds: number) => {
+    // Keep any stored end so a later reorder still has a mix-in window.
+    return onDropInChange(track.id, cueSeconds, Math.max(cueSeconds, track.dropInEndSeconds ?? cueSeconds))
+  }
 
   return (
     <>
@@ -124,14 +136,87 @@ export function TrackRow({
       <tr className={`border-t border-slate-800/60 ${isActive ? 'bg-fuchsia-500/5' : 'bg-slate-950/30'}`}>
         <td colSpan={columnCount} className="px-4 py-3">
           <div className="space-y-3">
-            <TransitionInputs track={track} onChange={onTransitionChange} />
+            <div className="flex flex-wrap items-start gap-x-8 gap-y-3">
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="size-2 rounded-sm bg-cyan-400/80" aria-hidden />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    {isFirst ? 'Drop-in' : 'Drop-in window'}
+                  </span>
+                </div>
+                <WindowInputs
+                  idPrefix={`${track.id}-drop-in`}
+                  label="Drop-in"
+                  startSeconds={track.dropInStartSeconds}
+                  endSeconds={track.dropInEndSeconds}
+                  durationSeconds={track.durationSeconds}
+                  point={isFirst}
+                  accentClassName="focus-visible:outline-cyan-400"
+                  onChange={(start, end) =>
+                    isFirst ? setDropInCue(start) : onDropInChange(track.id, start, end)
+                  }
+                />
+              </div>
+
+              <div className="space-y-1.5">
+                <div className="flex items-center gap-2">
+                  <span className="size-2 rounded-sm bg-fuchsia-400/80" aria-hidden />
+                  <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                    Transition window
+                  </span>
+                </div>
+                <WindowInputs
+                  idPrefix={`${track.id}-transition`}
+                  label="Transition"
+                  startSeconds={track.transitionStartSeconds}
+                  endSeconds={track.transitionEndSeconds}
+                  durationSeconds={track.durationSeconds}
+                  accentClassName="focus-visible:outline-fuchsia-400"
+                  onChange={(start, end) => onTransitionChange(track.id, start, end)}
+                />
+              </div>
+
+              {track.durationSeconds !== null && (
+                <span className="self-end pb-1 text-xs text-slate-500">
+                  Track length {formatTimeInput(track.durationSeconds)} · drag the waveform to adjust
+                </span>
+              )}
+            </div>
+
             <MiniWaveform
               peaks={track.waveformPeaks}
               durationSeconds={track.durationSeconds}
-              startSeconds={track.transitionStartSeconds}
-              endSeconds={track.transitionEndSeconds}
               bpm={track.bpm}
               beatOffsetSeconds={track.beatOffsetSeconds}
+              windows={[
+                {
+                  id: 'drop-in',
+                  label: isFirst ? 'Drop-in' : 'Drop-in window',
+                  startSeconds: track.dropInStartSeconds,
+                  endSeconds: track.dropInEndSeconds,
+                  point: isFirst,
+                  toneClassName: 'border-x border-cyan-400/80 bg-cyan-500/20',
+                  handleClassName: 'bg-cyan-300/90',
+                  onChange: (start, end) => {
+                    if (isFirst) {
+                      setDropInCue(start)
+                      return
+                    }
+                    onDropInChange(track.id, start, end)
+                  },
+                },
+                {
+                  id: 'transition',
+                  label: 'Transition window',
+                  startSeconds: track.transitionStartSeconds,
+                  endSeconds: track.transitionEndSeconds,
+                  toneClassName: 'border-x border-fuchsia-400/80 bg-fuchsia-500/20',
+                  handleClassName: 'bg-fuchsia-300/90',
+                  onChange: (start, end) => {
+                    onTransitionChange(track.id, start, end)
+                  },
+                },
+              ]}
             />
           </div>
         </td>

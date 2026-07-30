@@ -12,6 +12,11 @@ interface TrackTableProps {
     startSeconds: number,
     endSeconds: number,
   ) => { errors: string[]; range: { startSeconds: number; endSeconds: number } }
+  onDropInChange: (
+    id: string,
+    startSeconds: number,
+    endSeconds: number,
+  ) => { errors: string[]; range: { startSeconds: number; endSeconds: number } }
   activeTrackIds: string[]
 }
 
@@ -23,6 +28,7 @@ export function TrackTable({
   onMoveDown,
   onRemove,
   onTransitionChange,
+  onDropInChange,
   activeTrackIds,
 }: TrackTableProps) {
   const active = new Set(activeTrackIds)
@@ -45,7 +51,7 @@ export function TrackTable({
         <table className="w-full min-w-4xl border-collapse text-left text-sm">
           <caption className="sr-only">
             Mix sequence, in play order. Use the row buttons to reorder or remove tracks, and set each
-            track&apos;s transition window below its row.
+            track&apos;s drop-in and transition windows below its row.
           </caption>
           <thead>
             <tr className="bg-slate-900/80 text-xs font-semibold uppercase tracking-wider text-slate-500">
@@ -71,6 +77,7 @@ export function TrackTable({
                 onMoveDown={onMoveDown}
                 onRemove={onRemove}
                 onTransitionChange={onTransitionChange}
+                onDropInChange={onDropInChange}
                 isActive={active.has(track.id)}
               />
             ))}

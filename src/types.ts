@@ -24,6 +24,10 @@ export interface Track {
   transitionStartSeconds: number | null
   /** Mix-out window end, in seconds from the beginning of the track. */
   transitionEndSeconds: number | null
+  /** Mix-in (drop-in) window start — where playback begins when this track is mixed in. */
+  dropInStartSeconds: number | null
+  /** Mix-in (drop-in) window end — where the fade-in reaches full volume. */
+  dropInEndSeconds: number | null
   /** Downsampled peak envelope for the mini-waveform strip. */
   waveformPeaks: number[] | null
   status: AnalysisStatus

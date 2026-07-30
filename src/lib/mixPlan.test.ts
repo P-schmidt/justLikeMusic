@@ -15,6 +15,8 @@ function track(overrides: Partial<Track> & { id: string }): Track {
     durationSeconds: 100,
     transitionStartSeconds: 90,
     transitionEndSeconds: 100,
+    dropInStartSeconds: 0,
+    dropInEndSeconds: 0,
     waveformPeaks: null,
     status: 'ready',
     ...overrides,
@@ -39,6 +41,34 @@ describe('buildMixPlan', () => {
     expect(plan.totalDuration).toBe(210)
   })
 
+  it('offsets the timeline when a track drops in after 00:00', () => {
+    const plan = buildMixPlan([
+      track({
+        id: 'a',
+        durationSeconds: 100,
+        dropInStartSeconds: 10,
+        dropInEndSeconds: 20,
+        transitionStartSeconds: 80,
+        transitionEndSeconds: 90,
+      }),
+      track({
+        id: 'b',
+        durationSeconds: 100,
+        dropInStartSeconds: 5,
+        dropInEndSeconds: 15,
+        transitionStartSeconds: 90,
+        transitionEndSeconds: 100,
+      }),
+    ])
+
+    expect(plan.segments[0].localStart).toBe(10)
+    expect(plan.segments[0].startTime).toBe(0)
+    // Next track starts when A reaches transition start: 80 - 10 = 70 on the master clock.
+    expect(plan.segments[1].startTime).toBe(70)
+    expect(plan.segments[1].localStart).toBe(5)
+    expect(plan.totalDuration).toBe(70 + (100 - 5))
+  })
+
   it('stops each track at its transition end and the last at its duration', () => {
     const plan = buildMixPlan([
       track({ id: 'a', durationSeconds: 100, transitionStartSeconds: 80, transitionEndSeconds: 90 }),
@@ -54,10 +84,10 @@ describe('buildMixPlan', () => {
     expect(plan.segments[1].fadeOutEnd).toBeNull()
   })
 
-  it('fades a track in over the previous overlap', () => {
+  it('fades a track in over its drop-in window', () => {
     const plan = buildMixPlan([
       track({ id: 'a', durationSeconds: 100, transitionStartSeconds: 80, transitionEndSeconds: 95 }),
-      track({ id: 'b', durationSeconds: 100 }),
+      track({ id: 'b', durationSeconds: 100, dropInStartSeconds: 0, dropInEndSeconds: 15 }),
     ])
 
     expect(plan.segments[0].fadeInDuration).toBe(0)
@@ -66,9 +96,15 @@ describe('buildMixPlan', () => {
 
   it('never lets a fade-in outlast the point where the track fades out', () => {
     const plan = buildMixPlan([
-      // A 40s overlap feeding a track that starts fading out after 10s.
       track({ id: 'a', durationSeconds: 100, transitionStartSeconds: 50, transitionEndSeconds: 90 }),
-      track({ id: 'b', durationSeconds: 100, transitionStartSeconds: 10, transitionEndSeconds: 20 }),
+      track({
+        id: 'b',
+        durationSeconds: 100,
+        dropInStartSeconds: 0,
+        dropInEndSeconds: 40,
+        transitionStartSeconds: 10,
+        transitionEndSeconds: 20,
+      }),
       track({ id: 'c', durationSeconds: 30 }),
     ])
 
@@ -102,7 +138,7 @@ describe('buildMixPlan', () => {
 describe('segmentsAt', () => {
   const plan = buildMixPlan([
     track({ id: 'a', durationSeconds: 100, transitionStartSeconds: 80, transitionEndSeconds: 90 }),
-    track({ id: 'b', durationSeconds: 100 }),
+    track({ id: 'b', durationSeconds: 100, dropInStartSeconds: 0, dropInEndSeconds: 10 }),
   ])
 
   it('reports one track outside the overlap', () => {

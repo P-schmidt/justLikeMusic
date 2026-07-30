@@ -5,7 +5,12 @@ import { fileKey, isAudioFile } from '../lib/files'
 import { createLimiter } from '../lib/limiter'
 import { readTrackTags, titleFromFileName, UNKNOWN_ARTIST, UNKNOWN_GENRE } from '../lib/metadata'
 import { moveItem } from '../lib/reorder'
-import { defaultTransitionRange, validateTransitionRange } from '../lib/timeInput'
+import {
+  defaultDropInRange,
+  defaultTransitionRange,
+  validateDropInRange,
+  validateTransitionRange,
+} from '../lib/timeInput'
 import { computeWaveformPeaks } from '../lib/waveform'
 import type { Track } from '../types'
 
@@ -21,10 +26,13 @@ export interface AddFilesResult {
   duplicates: number
 }
 
-export interface TransitionUpdateResult {
+export interface WindowUpdateResult {
   errors: string[]
   range: { startSeconds: number; endSeconds: number }
 }
+
+/** @deprecated Prefer `WindowUpdateResult`. */
+export type TransitionUpdateResult = WindowUpdateResult
 
 let sequence = 0
 
@@ -47,6 +55,8 @@ function toQueuedTrack(file: File): Track {
     durationSeconds: null,
     transitionStartSeconds: null,
     transitionEndSeconds: null,
+    dropInStartSeconds: null,
+    dropInEndSeconds: null,
     waveformPeaks: null,
     status: 'queued',
   }
@@ -102,15 +112,18 @@ export function useTrackQueue() {
       try {
         const audioBuffer = await decodeAudioFile(file)
         const durationSeconds = audioBuffer.duration
-        // Free-time placeholder until BPM/offset arrive; replaced with last-8-bars
-        // once the grid is known.
+        // Free-time placeholders until BPM/offset arrive; transition is replaced
+        // with last-8-bars once the grid is known.
         const placeholder = defaultTransitionRange(durationSeconds)
+        const dropIn = defaultDropInRange(durationSeconds)
 
         patchTrack(id, {
           durationSeconds,
           waveformPeaks: computeWaveformPeaks(audioBuffer),
           transitionStartSeconds: placeholder.startSeconds,
           transitionEndSeconds: placeholder.endSeconds,
+          dropInStartSeconds: dropIn.startSeconds,
+          dropInEndSeconds: dropIn.endSeconds,
         })
 
         const { bpm, offsetSeconds } = await estimateTempo(audioBuffer)
@@ -196,7 +209,7 @@ export function useTrackQueue() {
   const clearTracks = useCallback(() => commit(() => []), [commit])
 
   const updateTransition = useCallback(
-    (id: string, startSeconds: number, endSeconds: number): TransitionUpdateResult => {
+    (id: string, startSeconds: number, endSeconds: number): WindowUpdateResult => {
       const track = tracksRef.current.find((entry) => entry.id === id)
       if (!track) {
         return {
@@ -236,5 +249,46 @@ export function useTrackQueue() {
     [patchTrack],
   )
 
-  return { tracks, addFiles, moveTrack, removeTrack, clearTracks, updateTransition }
+  const updateDropIn = useCallback(
+    (id: string, startSeconds: number, endSeconds: number): WindowUpdateResult => {
+      const track = tracksRef.current.find((entry) => entry.id === id)
+      if (!track) {
+        return {
+          errors: ['Track not found'],
+          range: { startSeconds, endSeconds },
+        }
+      }
+
+      const { range: validated, errors } = validateDropInRange(
+        startSeconds,
+        endSeconds,
+        track.durationSeconds,
+      )
+
+      let range = validated
+      if (
+        track.durationSeconds !== null &&
+        track.bpm !== null &&
+        track.beatOffsetSeconds !== null
+      ) {
+        range = snapTransitionRange(
+          validated.startSeconds,
+          validated.endSeconds,
+          track.bpm,
+          track.beatOffsetSeconds,
+          track.durationSeconds,
+        )
+      }
+
+      patchTrack(id, {
+        dropInStartSeconds: range.startSeconds,
+        dropInEndSeconds: range.endSeconds,
+      })
+
+      return { errors, range }
+    },
+    [patchTrack],
+  )
+
+  return { tracks, addFiles, moveTrack, removeTrack, clearTracks, updateTransition, updateDropIn }
 }

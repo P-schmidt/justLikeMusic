@@ -11,6 +11,7 @@ import {
   buildMixPlan,
   EMPTY_MIX_PLAN,
   firstChangedIndex,
+  segmentSpan,
   segmentsAt,
   segmentSignature,
   type MixPlan,
@@ -262,7 +263,7 @@ export class MixEngine {
       if (segment.startTime > horizon) {
         break
       }
-      if (segment.startTime + segment.localEnd <= position) {
+      if (segment.startTime + segmentSpan(segment) <= position) {
         continue
       }
       if (this.scheduled.has(segment.trackId) || this.pending.has(segment.trackId)) {
@@ -300,18 +301,19 @@ export class MixEngine {
       return
     }
 
-    const localOffset = Math.max(0, this.position - segment.startTime)
-    const playDuration = segment.localEnd - localOffset
+    const elapsed = Math.max(0, this.position - segment.startTime)
+    const localTime = segment.localStart + elapsed
+    const playDuration = segment.localEnd - localTime
     if (playDuration <= 0) {
       return
     }
 
     const toContextTime = (mixTime: number) => this.anchorContextTime + (mixTime - this.anchorMix)
-    const when = Math.max(context.currentTime, toContextTime(segment.startTime + localOffset))
+    const when = Math.max(context.currentTime, toContextTime(segment.startTime + elapsed))
 
     const channel = this.createChannel(context, buffer)
-    this.applyCrossfade(channel.fadeGain.gain, segment, localOffset, when, toContextTime)
-    this.applyBassSwap(channel.bassShelf.gain, segment, localOffset, when, toContextTime)
+    this.applyCrossfade(channel.fadeGain.gain, segment, localTime, when, toContextTime)
+    this.applyBassSwap(channel.bassShelf.gain, segment, localTime, when, toContextTime)
 
     channel.source.onended = () => {
       if (this.scheduled.get(segment.trackId)?.source === channel.source) {
@@ -321,7 +323,7 @@ export class MixEngine {
     }
 
     channel.fadeGain.connect(master)
-    channel.source.start(when, localOffset, playDuration)
+    channel.source.start(when, localTime, playDuration)
     this.scheduled.set(segment.trackId, { segment, ...channel })
   }
 
@@ -360,33 +362,38 @@ export class MixEngine {
   /**
    * Writes the whole fade-in/fade-out shape for one track as automation events.
    *
-   * `localOffset` is where playback joins the track, which is 0 for a normal
-   * transition but can land inside either fade after a seek. Each branch emits at
-   * most one curve starting at `when`, because a `setValueCurveAtTime` throws if
-   * another event sits inside its window.
+   * `localTime` is the absolute position inside the audio buffer where playback
+   * joins — normally `localStart`, but mid-fade after a seek. Each branch emits
+   * at most one curve starting at `when`, because a `setValueCurveAtTime` throws
+   * if another event sits inside its window.
    */
   private applyCrossfade(
     param: AudioParam,
     segment: MixSegment,
-    localOffset: number,
+    localTime: number,
     when: number,
     toContextTime: (mixTime: number) => number,
   ): void {
-    const { fadeInDuration, fadeOutStart, fadeOutEnd } = segment
+    const { localStart, fadeInDuration, fadeOutStart, fadeOutEnd } = segment
     const overlap = fadeOutStart !== null && fadeOutEnd !== null ? fadeOutEnd - fadeOutStart : 0
 
     // Joining while the track is already fading out: only the tail is left.
-    if (fadeOutStart !== null && fadeOutEnd !== null && overlap > 0 && localOffset >= fadeOutStart) {
-      const progress = (localOffset - fadeOutStart) / overlap
-      param.setValueCurveAtTime(equalPowerCurve('out', progress, 1), when, fadeOutEnd - localOffset)
+    if (fadeOutStart !== null && fadeOutEnd !== null && overlap > 0 && localTime >= fadeOutStart) {
+      const progress = (localTime - fadeOutStart) / overlap
+      param.setValueCurveAtTime(equalPowerCurve('out', progress, 1), when, fadeOutEnd - localTime)
       return
     }
 
     let fadeInEnd = when
+    const fadeInEndLocal = localStart + fadeInDuration
 
-    if (fadeInDuration > 0 && localOffset < fadeInDuration) {
-      const remaining = fadeInDuration - localOffset
-      param.setValueCurveAtTime(equalPowerCurve('in', localOffset / fadeInDuration, 1), when, remaining)
+    if (fadeInDuration > 0 && localTime < fadeInEndLocal) {
+      const remaining = fadeInEndLocal - localTime
+      param.setValueCurveAtTime(
+        equalPowerCurve('in', (localTime - localStart) / fadeInDuration, 1),
+        when,
+        remaining,
+      )
       fadeInEnd = when + remaining
     } else {
       param.setValueAtTime(1, when)
@@ -397,7 +404,10 @@ export class MixEngine {
       return
     }
 
-    const fadeOutAt = Math.max(fadeInEnd + AUTOMATION_GUARD_SECONDS, toContextTime(segment.startTime + fadeOutStart))
+    const fadeOutAt = Math.max(
+      fadeInEnd + AUTOMATION_GUARD_SECONDS,
+      toContextTime(segment.startTime + (fadeOutStart - localStart)),
+    )
     param.setValueCurveAtTime(equalPowerCurve('out'), fadeOutAt, overlap)
   }
 
@@ -411,24 +421,29 @@ export class MixEngine {
   private applyBassSwap(
     param: AudioParam,
     segment: MixSegment,
-    localOffset: number,
+    localTime: number,
     when: number,
     toContextTime: (mixTime: number) => number,
   ): void {
-    const { fadeInDuration, fadeOutStart, fadeOutEnd } = segment
+    const { localStart, fadeInDuration, fadeOutStart, fadeOutEnd } = segment
     const overlap = fadeOutStart !== null && fadeOutEnd !== null ? fadeOutEnd - fadeOutStart : 0
 
-    if (fadeOutStart !== null && fadeOutEnd !== null && overlap > 0 && localOffset >= fadeOutStart) {
-      const progress = (localOffset - fadeOutStart) / overlap
-      param.setValueCurveAtTime(bassShelfCurve('out', progress, 1), when, fadeOutEnd - localOffset)
+    if (fadeOutStart !== null && fadeOutEnd !== null && overlap > 0 && localTime >= fadeOutStart) {
+      const progress = (localTime - fadeOutStart) / overlap
+      param.setValueCurveAtTime(bassShelfCurve('out', progress, 1), when, fadeOutEnd - localTime)
       return
     }
 
     let fadeInEnd = when
+    const fadeInEndLocal = localStart + fadeInDuration
 
-    if (fadeInDuration > 0 && localOffset < fadeInDuration) {
-      const remaining = fadeInDuration - localOffset
-      param.setValueCurveAtTime(bassShelfCurve('in', localOffset / fadeInDuration, 1), when, remaining)
+    if (fadeInDuration > 0 && localTime < fadeInEndLocal) {
+      const remaining = fadeInEndLocal - localTime
+      param.setValueCurveAtTime(
+        bassShelfCurve('in', (localTime - localStart) / fadeInDuration, 1),
+        when,
+        remaining,
+      )
       fadeInEnd = when + remaining
     } else {
       param.setValueAtTime(0, when)
@@ -438,7 +453,10 @@ export class MixEngine {
       return
     }
 
-    const fadeOutAt = Math.max(fadeInEnd + AUTOMATION_GUARD_SECONDS, toContextTime(segment.startTime + fadeOutStart))
+    const fadeOutAt = Math.max(
+      fadeInEnd + AUTOMATION_GUARD_SECONDS,
+      toContextTime(segment.startTime + (fadeOutStart - localStart)),
+    )
     // Park the shelf flat until the fade-out starts, then dive into the cut.
     param.setValueAtTime(0, Math.max(when, fadeOutAt - AUTOMATION_GUARD_SECONDS))
     param.setValueCurveAtTime(bassShelfCurve('out'), fadeOutAt, overlap)
