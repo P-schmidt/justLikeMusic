@@ -9,9 +9,10 @@ export interface TransitionValidation {
   errors: string[]
 }
 
-const TIME_PATTERN = /^(\d+):([0-5]?\d)$/
+/** Whole seconds or one decimal: `1:30`, `1:30.5`, `0:04.2`. */
+const TIME_PATTERN = /^(\d+):([0-5]?\d)(?:\.(\d))?$/
 
-/** Parses `M:SS` or `MM:SS` into whole seconds. Returns `null` when invalid. */
+/** Parses `M:SS` or `M:SS.d` into seconds. Returns `null` when invalid. */
 export function parseTimeInput(value: string): number | null {
   const trimmed = value.trim()
   if (!trimmed) {
@@ -25,20 +26,27 @@ export function parseTimeInput(value: string): number | null {
 
   const minutes = Number(match[1])
   const seconds = Number(match[2])
+  const tenths = match[3] !== undefined ? Number(match[3]) : 0
 
   if (!Number.isFinite(minutes) || !Number.isFinite(seconds) || seconds >= 60) {
     return null
   }
 
-  return minutes * 60 + seconds
+  return minutes * 60 + seconds + tenths / 10
 }
 
-/** Formats seconds as `M:SS` for transition inputs. */
+/**
+ * Formats seconds as `M:SS.d` so bar-snapped times that fall between whole
+ * seconds stay visible in the inputs.
+ */
 export function formatTimeInput(seconds: number): string {
-  const total = Math.max(0, Math.round(seconds))
-  const minutes = Math.floor(total / 60)
-  const remainder = total % 60
-  return `${minutes}:${String(remainder).padStart(2, '0')}`
+  const totalTenths = Math.max(0, Math.round(seconds * 10))
+  const minutes = Math.floor(totalTenths / 600)
+  const remainderTenths = totalTenths % 600
+  const wholeSeconds = Math.floor(remainderTenths / 10)
+  const tenths = remainderTenths % 10
+
+  return `${minutes}:${String(wholeSeconds).padStart(2, '0')}.${tenths}`
 }
 
 /**
@@ -84,9 +92,8 @@ const DEFAULT_OVERLAP_SECONDS = 30
 const DEFAULT_OVERLAP_FRACTION = 0.25
 
 /**
- * Default mix-out window: the last 30 seconds, shortened for tracks under two
- * minutes. Taking a fixed 30s off a short track would put its transition start at
- * 00:00, which stacks the whole set on top of itself.
+ * Free-time fallback when no beat grid is available: the last 30 seconds,
+ * shortened for tracks under two minutes.
  */
 export function defaultTransitionRange(durationSeconds: number): TransitionRange {
   const overlap = Math.min(DEFAULT_OVERLAP_SECONDS, durationSeconds * DEFAULT_OVERLAP_FRACTION)

@@ -11,6 +11,7 @@ function track(overrides: Partial<Track> & { id: string }): Track {
     camelotKey: null,
     rawKey: null,
     bpm: 120,
+    beatOffsetSeconds: 0,
     durationSeconds: 100,
     transitionStartSeconds: 90,
     transitionEndSeconds: 100,

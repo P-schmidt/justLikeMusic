@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { decodeAudioFile, estimateBpm } from '../lib/audio'
+import { decodeAudioFile, estimateTempo } from '../lib/audio'
+import { defaultBarAlignedTransition, snapTransitionRange } from '../lib/beatGrid'
 import { fileKey, isAudioFile } from '../lib/files'
 import { createLimiter } from '../lib/limiter'
 import { readTrackTags, titleFromFileName, UNKNOWN_ARTIST, UNKNOWN_GENRE } from '../lib/metadata'
@@ -42,6 +43,7 @@ function toQueuedTrack(file: File): Track {
     camelotKey: null,
     rawKey: null,
     bpm: null,
+    beatOffsetSeconds: null,
     durationSeconds: null,
     transitionStartSeconds: null,
     transitionEndSeconds: null,
@@ -100,19 +102,43 @@ export function useTrackQueue() {
       try {
         const audioBuffer = await decodeAudioFile(file)
         const durationSeconds = audioBuffer.duration
-        const transition = defaultTransitionRange(durationSeconds)
+        // Free-time placeholder until BPM/offset arrive; replaced with last-8-bars
+        // once the grid is known.
+        const placeholder = defaultTransitionRange(durationSeconds)
 
         patchTrack(id, {
           durationSeconds,
           waveformPeaks: computeWaveformPeaks(audioBuffer),
-          transitionStartSeconds: transition.startSeconds,
-          transitionEndSeconds: transition.endSeconds,
+          transitionStartSeconds: placeholder.startSeconds,
+          transitionEndSeconds: placeholder.endSeconds,
         })
 
-        const bpm = await estimateBpm(audioBuffer)
-        patchTrack(id, { bpm, status: 'ready', errorMessage: undefined })
+        const { bpm, offsetSeconds } = await estimateTempo(audioBuffer)
+        const transition =
+          defaultBarAlignedTransition(durationSeconds, bpm, offsetSeconds) ?? placeholder
+
+        patchTrack(id, {
+          bpm,
+          beatOffsetSeconds: offsetSeconds,
+          transitionStartSeconds: transition.startSeconds,
+          transitionEndSeconds: transition.endSeconds,
+          status: 'ready',
+          errorMessage: undefined,
+        })
       } catch (error) {
-        patchTrack(id, { status: 'failed', errorMessage: errorMessage(error) })
+        // Decode may have succeeded while tempo failed — keep duration/peaks and
+        // free-time transitions; only BPM/offset stay unset.
+        const current = tracksRef.current.find((track) => track.id === id)
+        if (current?.durationSeconds !== null && current?.durationSeconds !== undefined) {
+          patchTrack(id, {
+            status: 'failed',
+            bpm: null,
+            beatOffsetSeconds: null,
+            errorMessage: errorMessage(error),
+          })
+        } else {
+          patchTrack(id, { status: 'failed', errorMessage: errorMessage(error) })
+        }
       }
     },
     [patchTrack],
@@ -179,7 +205,27 @@ export function useTrackQueue() {
         }
       }
 
-      const { range, errors } = validateTransitionRange(startSeconds, endSeconds, track.durationSeconds)
+      const { range: validated, errors } = validateTransitionRange(
+        startSeconds,
+        endSeconds,
+        track.durationSeconds,
+      )
+
+      let range = validated
+      if (
+        track.durationSeconds !== null &&
+        track.bpm !== null &&
+        track.beatOffsetSeconds !== null
+      ) {
+        range = snapTransitionRange(
+          validated.startSeconds,
+          validated.endSeconds,
+          track.bpm,
+          track.beatOffsetSeconds,
+          track.durationSeconds,
+        )
+      }
+
       patchTrack(id, {
         transitionStartSeconds: range.startSeconds,
         transitionEndSeconds: range.endSeconds,

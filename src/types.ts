@@ -14,6 +14,11 @@ export interface Track {
   rawKey: string | null
   /** Estimated tempo, rounded to one decimal. `null` until analysis succeeds. */
   bpm: number | null
+  /**
+   * Beat-grid phase from tempo detection — time of a detected beat, used to place
+   * bar lines and snap transitions. `null` when no steady beat was found.
+   */
+  beatOffsetSeconds: number | null
   durationSeconds: number | null
   /** Mix-out window start, in seconds from the beginning of the track. */
   transitionStartSeconds: number | null

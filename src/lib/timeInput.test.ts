@@ -13,19 +13,26 @@ describe('parseTimeInput', () => {
     expect(parseTimeInput('12:05')).toBe(725)
   })
 
+  it('parses one decimal place', () => {
+    expect(parseTimeInput('1:30.5')).toBe(90.5)
+    expect(parseTimeInput('0:04.2')).toBe(4.2)
+  })
+
   it('rejects invalid formats', () => {
     expect(parseTimeInput('')).toBeNull()
     expect(parseTimeInput('90')).toBeNull()
     expect(parseTimeInput('1:60')).toBeNull()
+    expect(parseTimeInput('1:30.12')).toBeNull()
     expect(parseTimeInput('abc')).toBeNull()
   })
 })
 
 describe('formatTimeInput', () => {
-  it('formats whole seconds as M:SS', () => {
-    expect(formatTimeInput(0)).toBe('0:00')
-    expect(formatTimeInput(90)).toBe('1:30')
-    expect(formatTimeInput(725)).toBe('12:05')
+  it('formats with one decimal so bar snaps stay visible', () => {
+    expect(formatTimeInput(0)).toBe('0:00.0')
+    expect(formatTimeInput(90)).toBe('1:30.0')
+    expect(formatTimeInput(90.5)).toBe('1:30.5')
+    expect(formatTimeInput(4.24)).toBe('0:04.2')
   })
 })
 

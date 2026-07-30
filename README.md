@@ -51,6 +51,12 @@ Each track is also volume-normalized to about −14 dBFS RMS (capped boost/cut, 
 peak ceiling so a loud transient cannot shove the rest of the set into the red), so a
 quiet vinyl rip and a brickwalled modern master sit closer together in the sequence.
 
+Tempo detection uses `guess()` so each track also gets a beat-grid phase. Transition
+defaults are the last 8 bars on that grid (4/4), and edits snap to bar boundaries.
+The mini-waveform overlays beat ticks and stronger bar lines so the mix-out window is
+visually aligned with the groove. When no steady beat is found, free-time seconds are
+kept and the grid is omitted.
+
 Editing a transition or reordering mid-playback only restarts the sources from the
 first affected track onwards, so an edit later in the set does not interrupt what is
 currently playing. Decoded audio is large, so only a short window of buffers around

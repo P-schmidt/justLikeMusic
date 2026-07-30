@@ -130,6 +130,8 @@ export function TrackRow({
               durationSeconds={track.durationSeconds}
               startSeconds={track.transitionStartSeconds}
               endSeconds={track.transitionEndSeconds}
+              bpm={track.bpm}
+              beatOffsetSeconds={track.beatOffsetSeconds}
             />
           </div>
         </td>

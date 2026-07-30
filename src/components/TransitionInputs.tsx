@@ -12,10 +12,11 @@ interface TransitionInputsProps {
 }
 
 const INPUT_CLASS =
-  'w-20 rounded-md border bg-slate-950 px-2 py-1 font-mono text-xs tabular-nums text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-fuchsia-400 disabled:cursor-not-allowed disabled:opacity-40'
+  'w-24 rounded-md border bg-slate-950 px-2 py-1 font-mono text-xs tabular-nums text-slate-100 focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-fuchsia-400 disabled:cursor-not-allowed disabled:opacity-40'
 
 export function TransitionInputs({ track, onChange }: TransitionInputsProps) {
   const ready = track.durationSeconds !== null
+  const canSnap = track.bpm !== null && track.beatOffsetSeconds !== null
   const [startValue, setStartValue] = useState('')
   const [endValue, setEndValue] = useState('')
   const [errors, setErrors] = useState<string[]>([])
@@ -34,7 +35,7 @@ export function TransitionInputs({ track, onChange }: TransitionInputsProps) {
     const endSeconds = parseTimeInput(nextEnd)
 
     if (startSeconds === null || endSeconds === null) {
-      setErrors(['Use MM:SS format, for example 1:30'])
+      setErrors(['Use M:SS or M:SS.d, for example 1:30.5'])
       return
     }
 
@@ -59,8 +60,8 @@ export function TransitionInputs({ track, onChange }: TransitionInputsProps) {
           <input
             id={`${track.id}-transition-start`}
             type="text"
-            inputMode="numeric"
-            placeholder="0:00"
+            inputMode="decimal"
+            placeholder="0:00.0"
             className={`${INPUT_CLASS} ${errors.length > 0 ? 'border-rose-500/70' : 'border-slate-700'}`}
             value={startValue}
             disabled={!ready}
@@ -75,8 +76,8 @@ export function TransitionInputs({ track, onChange }: TransitionInputsProps) {
           <input
             id={`${track.id}-transition-end`}
             type="text"
-            inputMode="numeric"
-            placeholder="0:00"
+            inputMode="decimal"
+            placeholder="0:00.0"
             className={`${INPUT_CLASS} ${errors.length > 0 ? 'border-rose-500/70' : 'border-slate-700'}`}
             value={endValue}
             disabled={!ready}
@@ -87,7 +88,10 @@ export function TransitionInputs({ track, onChange }: TransitionInputsProps) {
         </label>
 
         {track.durationSeconds !== null && (
-          <span className="pb-1 text-xs text-slate-500">Track length {formatTimeInput(track.durationSeconds)}</span>
+          <span className="pb-1 text-xs text-slate-500">
+            Track length {formatTimeInput(track.durationSeconds)}
+            {canSnap ? ' · snaps to bars' : ''}
+          </span>
         )}
       </div>
 
