@@ -26,16 +26,30 @@ The queue is laid out on one continuous timeline: track N + 1 starts from its ow
 00:00 the moment track N reaches its transition start, and the two overlap until
 track N's transition end.
 
-Each track gets its own `AudioBufferSourceNode` and `GainNode`, started at an
-absolute time on the shared `AudioContext` clock. A polling loop only decides which
-sources to *create* (20 seconds ahead of the playhead); once started, the whole
-crossfade is described by automation events on the gain, so transitions land where
-the plan says instead of depending on timer accuracy.
+Each track gets its own channel graph —
+
+`source → RMS norm → rumble high-pass → bass shelf → fade gain → master` —
+
+started at an absolute time on the shared `AudioContext` clock. A polling loop only
+decides which sources to *create* (20 seconds ahead of the playhead); once started,
+the whole crossfade and bass swap are described by automation events, so transitions
+land where the plan says instead of depending on timer accuracy.
 
 Crossfades are equal-power: the outgoing track follows a cosine curve and the
 incoming one a sine, so their gains squared sum to 1 throughout. Both sit at 0.707
 (−3 dB) at the midpoint. A linear pair would sum to less than 1 in the middle, which
 is the audible dip in a naive crossfade.
+
+During the same overlap the low end is swapped on a low-shelf at 220 Hz: the outgoing
+track dives to −15 dB and the incoming one rises from −15 dB back to flat. That cut is
+musical rather than a full EQ kill, so 808s and warm soul bass keep some body instead
+of vanishing into a thin midrange — a better fit for hip-hop / soul / eclectic sets than
+a house-style high-pass kill. A fixed 40 Hz high-pass sits ahead of the shelf as a
+rumble / DC safety.
+
+Each track is also volume-normalized to about −14 dBFS RMS (capped boost/cut, with a
+peak ceiling so a loud transient cannot shove the rest of the set into the red), so a
+quiet vinyl rip and a brickwalled modern master sit closer together in the sequence.
 
 Editing a transition or reordering mid-playback only restarts the sources from the
 first affected track onwards, so an edit later in the set does not interrupt what is
